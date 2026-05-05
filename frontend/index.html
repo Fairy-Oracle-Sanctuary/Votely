@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Votely</title>
+  <link rel="stylesheet" href="assets/style.css" />
+</head>
+<body>
+  <header class="app-header">
+    <div class="container">
+      <a href="#/" class="logo">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+          <polyline points="22 4 12 14.01 9 11.01"/>
+        </svg>
+        <span>Votely</span>
+      </a>
+      <nav class="nav-actions">
+        <button id="btn-lang" class="btn btn-ghost btn-sm" title="Switch language">中文</button>
+        <button id="btn-admin" class="btn btn-ghost btn-sm" title="Admin Login">Login</button>
+        <button id="btn-create" class="btn btn-outline" title="Create Vote">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+          <span>Create</span>
+        </button>
+      </nav>
+    </div>
+  </header>
+
+  <main id="app" class="container"></main>
+
+  <footer class="app-footer">
+    <div class="container">
+      <p>Votely &mdash; Lightweight Voting Platform</p>
+    </div>
+  </footer>
+
+  <script src="assets/app.js"></script>
+</body>
+</html>
