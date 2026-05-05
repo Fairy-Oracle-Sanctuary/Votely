@@ -24,7 +24,15 @@ class Vote(Base):
     start_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     end_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
 
+    # normal | tiered
+    mode: Mapped[str] = mapped_column(String(16), nullable=False, default="normal")
+    # JSON string: {"main": 1, "secondary": 2, "normal": 4}
+    tier_config_json: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
     max_choices: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+    # Custom rules text for tiered mode (empty = use default)
+    rules_text: Mapped[str] = mapped_column(Text, nullable=False, default="")
 
     # after_vote: can view results after submitting; after_end: only after vote ends
     result_visibility: Mapped[str] = mapped_column(

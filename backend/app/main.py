@@ -11,7 +11,7 @@ from uuid import uuid4
 from fastapi import Cookie, Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -39,6 +39,36 @@ def hash_token(token: str) -> str:
 def sanitize(text: str) -> str:
     """Strip HTML tags and escape special characters."""
     return html.escape(text.strip(), quote=True)
+
+
+def normalize_tier_config(cfg: dict[str, int] | None) -> dict[str, int]:
+    # Defaults: main=1, secondary=2, normal=4
+    base = {"main": 1, "secondary": 2, "normal": 4}
+    if not cfg:
+        return base
+    out: dict[str, int] = {}
+    for k in ("main", "secondary", "normal"):
+        v = cfg.get(k, base[k])
+        try:
+            iv = int(v)
+        except Exception:
+            iv = base[k]
+        out[k] = max(0, iv)
+    return out
+
+
+def parse_tier_config_json(raw: str) -> dict[str, int]:
+    if not raw:
+        return normalize_tier_config(None)
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return normalize_tier_config(None)
+    if isinstance(data, dict):
+        return normalize_tier_config(
+            {k: data.get(k) for k in ("main", "secondary", "normal")}
+        )
+    return normalize_tier_config(None)
 
 
 try:
@@ -128,6 +158,16 @@ def create_app() -> FastAPI:
     )
 
     Base.metadata.create_all(bind=engine)
+
+    # Migrate: add rules_text column if missing
+    with engine.connect() as conn:
+        try:
+            conn.execute(text("SELECT rules_text FROM votes LIMIT 1"))
+        except Exception:
+            conn.execute(
+                text("ALTER TABLE votes ADD COLUMN rules_text TEXT NOT NULL DEFAULT ''")
+            )
+            conn.commit()
 
     @app.get("/api/health")
     def health() -> dict:
@@ -334,7 +374,12 @@ def create_app() -> FastAPI:
                     status=effective_status(v),
                     startAt=v.start_at,
                     endAt=v.end_at,
+                    mode=v.mode,
+                    tierConfig=parse_tier_config_json(v.tier_config_json)
+                    if v.mode == "tiered"
+                    else None,
                     maxChoices=v.max_choices,
+                    rulesText=v.rules_text,
                     resultVisibility=v.result_visibility,
                     totalVotes=total,
                 )
@@ -361,7 +406,12 @@ def create_app() -> FastAPI:
             status=effective_status(v),
             startAt=v.start_at,
             endAt=v.end_at,
+            mode=v.mode,
+            tierConfig=parse_tier_config_json(v.tier_config_json)
+            if v.mode == "tiered"
+            else None,
             maxChoices=v.max_choices,
+            rulesText=v.rules_text,
             resultVisibility=v.result_visibility,
             options=[{"id": o.id, "text": o.text} for o in v.options],
         )
@@ -424,8 +474,14 @@ def create_app() -> FastAPI:
         choices = list(dict.fromkeys(body.choices))
         if len(choices) == 0:
             raise HTTPException(status_code=400, detail="choices is required")
-        if len(choices) > v.max_choices:
-            raise HTTPException(status_code=400, detail="Too many choices")
+        if v.mode == "tiered":
+            tc = parse_tier_config_json(v.tier_config_json)
+            limit = tc["main"] + tc["secondary"] + tc["normal"]
+            if len(choices) > limit:
+                raise HTTPException(status_code=400, detail="Too many choices")
+        else:
+            if len(choices) > v.max_choices:
+                raise HTTPException(status_code=400, detail="Too many choices")
 
         allowed_option_ids = {o.id for o in v.options}
         if any(c not in allowed_option_ids for c in choices):
@@ -493,20 +549,38 @@ def create_app() -> FastAPI:
 
         # Aggregate counts by option id
         counts = {o.id: 0 for o in v.options}
+        # For tiered mode: per-tier counts
+        main_counts = {o.id: 0 for o in v.options}
+        sec_counts = {o.id: 0 for o in v.options}
+        nor_counts = {o.id: 0 for o in v.options}
+
         records = db.execute(
             select(VoteRecord.choices_json).where(VoteRecord.vote_id == vote_id)
         ).all()
         total = 0
+        is_tiered = v.mode == "tiered"
+        if is_tiered:
+            tc = parse_tier_config_json(v.tier_config_json)
+            m_end = tc["main"]
+            s_end = m_end + tc["secondary"]
+
         for (choices_json,) in records:
             try:
                 ch = json.loads(choices_json)
             except json.JSONDecodeError:
                 ch = []
             if isinstance(ch, list):
-                for oid in ch:
+                for i, oid in enumerate(ch):
                     if oid in counts:
                         counts[oid] += 1
                         total += 1
+                        if is_tiered:
+                            if i < m_end:
+                                main_counts[oid] += 1
+                            elif i < s_end:
+                                sec_counts[oid] += 1
+                            else:
+                                nor_counts[oid] += 1
 
         items = []
         for o in v.options:
@@ -521,7 +595,29 @@ def create_app() -> FastAPI:
                 }
             )
 
-        return VoteResultsOut(voteId=vote_id, total=total, items=items)
+        tiered_items = None
+        if is_tiered:
+            tiered_items = []
+            for o in v.options:
+                mv = main_counts.get(o.id, 0)
+                sv = sec_counts.get(o.id, 0)
+                nv = nor_counts.get(o.id, 0)
+                tv = mv + sv + nv
+                tiered_items.append(
+                    {
+                        "optionId": o.id,
+                        "text": o.text,
+                        "mainVotes": mv,
+                        "secondaryVotes": sv,
+                        "normalVotes": nv,
+                        "totalVotes": tv,
+                        "percent": (tv / total * 100.0) if total > 0 else 0.0,
+                    }
+                )
+
+        return VoteResultsOut(
+            voteId=vote_id, total=total, items=items, tieredItems=tiered_items
+        )
 
     # ── Admin APIs ───────────────────────────────────────────
 
@@ -550,7 +646,12 @@ def create_app() -> FastAPI:
                     status=effective_status(v),
                     startAt=v.start_at,
                     endAt=v.end_at,
+                    mode=v.mode,
+                    tierConfig=parse_tier_config_json(v.tier_config_json)
+                    if v.mode == "tiered"
+                    else None,
                     maxChoices=v.max_choices,
+                    rulesText=v.rules_text,
                     resultVisibility=v.result_visibility,
                     totalVotes=total,
                 )
@@ -568,6 +669,13 @@ def create_app() -> FastAPI:
     ):
         validate_vote_times(body.startAt, body.endAt)
 
+        mode = body.mode
+        tier_cfg = normalize_tier_config(body.tierConfig) if mode == "tiered" else None
+        if mode == "tiered":
+            max_choices = tier_cfg["main"] + tier_cfg["secondary"] + tier_cfg["normal"]
+        else:
+            max_choices = body.maxChoices
+
         vote_id = str(uuid4())
         v = Vote(
             id=vote_id,
@@ -576,7 +684,12 @@ def create_app() -> FastAPI:
             status="pending",
             start_at=body.startAt,
             end_at=body.endAt,
-            max_choices=body.maxChoices,
+            mode=mode,
+            tier_config_json=json.dumps(tier_cfg, ensure_ascii=False)
+            if mode == "tiered"
+            else "",
+            max_choices=max_choices,
+            rules_text=sanitize(body.rulesText) if body.rulesText else "",
             result_visibility=body.resultVisibility,
             created_by_admin_id=admin.id,
             created_at=datetime.utcnow(),
@@ -584,8 +697,8 @@ def create_app() -> FastAPI:
         )
 
         opts: list[VoteOption] = []
-        for idx, text in enumerate(body.options):
-            t = sanitize(text)
+        for idx, opt_text in enumerate(body.options):
+            t = sanitize(opt_text)
             if not t:
                 continue
             opts.append(
@@ -614,7 +727,12 @@ def create_app() -> FastAPI:
             status=effective_status(v),
             startAt=v.start_at,
             endAt=v.end_at,
+            mode=v.mode,
+            tierConfig=parse_tier_config_json(v.tier_config_json)
+            if v.mode == "tiered"
+            else None,
             maxChoices=v.max_choices,
+            rulesText=v.rules_text,
             resultVisibility=v.result_visibility,
             options=[{"id": o.id, "text": o.text} for o in v.options],
         )
@@ -636,6 +754,15 @@ def create_app() -> FastAPI:
         if admin.role != "super" and v.created_by_admin_id != admin.id:
             raise HTTPException(status_code=403, detail="Forbidden")
 
+        if body.mode is not None:
+            v.mode = body.mode
+            if v.mode != "tiered":
+                v.tier_config_json = ""
+
+        if body.tierConfig is not None and v.mode == "tiered":
+            tier_cfg = normalize_tier_config(body.tierConfig)
+            v.tier_config_json = json.dumps(tier_cfg, ensure_ascii=False)
+
         if body.title is not None:
             v.title = sanitize(body.title)
         if body.description is not None:
@@ -644,10 +771,15 @@ def create_app() -> FastAPI:
             v.start_at = body.startAt
         if body.endAt is not None:
             v.end_at = body.endAt
-        if body.maxChoices is not None:
+        if v.mode == "tiered":
+            tc = parse_tier_config_json(v.tier_config_json)
+            v.max_choices = tc["main"] + tc["secondary"] + tc["normal"]
+        elif body.maxChoices is not None:
             v.max_choices = body.maxChoices
         if body.resultVisibility is not None:
             v.result_visibility = body.resultVisibility
+        if body.rulesText is not None:
+            v.rules_text = sanitize(body.rulesText)
 
         validate_vote_times(v.start_at, v.end_at)
 
@@ -675,7 +807,12 @@ def create_app() -> FastAPI:
             status=effective_status(v),
             startAt=v.start_at,
             endAt=v.end_at,
+            mode=v.mode,
+            tierConfig=parse_tier_config_json(v.tier_config_json)
+            if v.mode == "tiered"
+            else None,
             maxChoices=v.max_choices,
+            rulesText=v.rules_text,
             resultVisibility=v.result_visibility,
             options=[{"id": o.id, "text": o.text} for o in v.options],
         )

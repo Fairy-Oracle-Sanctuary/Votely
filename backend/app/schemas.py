@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 VoteStatus = Literal["pending", "active", "ended"]
 ResultVisibility = Literal["after_vote", "after_end"]
+VoteMode = Literal["normal", "tiered"]
 
 
 class VoteOptionOut(BaseModel):
@@ -21,6 +22,9 @@ class VoteOut(BaseModel):
     status: VoteStatus
     startAt: datetime
     endAt: datetime
+    mode: VoteMode = "normal"
+    tierConfig: dict[str, int] | None = None
+    rulesText: str = ""
     maxChoices: int
     resultVisibility: ResultVisibility
 
@@ -38,6 +42,9 @@ class VoteCreateIn(BaseModel):
     description: str = Field(default="")
     startAt: datetime
     endAt: datetime
+    mode: VoteMode = Field(default="normal")
+    tierConfig: dict[str, int] | None = None
+    rulesText: str = Field(default="")
     maxChoices: int = Field(default=1, ge=1, le=50)
     resultVisibility: ResultVisibility = Field(default="after_vote")
     options: list[str] = Field(min_length=2)
@@ -48,6 +55,9 @@ class VoteUpdateIn(BaseModel):
     description: str | None = None
     startAt: datetime | None = None
     endAt: datetime | None = None
+    mode: VoteMode | None = None
+    tierConfig: dict[str, int] | None = None
+    rulesText: str | None = None
     maxChoices: int | None = Field(default=None, ge=1, le=50)
     resultVisibility: ResultVisibility | None = None
     options: list[str] | None = None
@@ -75,7 +85,18 @@ class ResultItemOut(BaseModel):
     percent: float
 
 
+class TieredResultItemOut(BaseModel):
+    optionId: str
+    text: str
+    mainVotes: int = 0
+    secondaryVotes: int = 0
+    normalVotes: int = 0
+    totalVotes: int = 0
+    percent: float = 0.0
+
+
 class VoteResultsOut(BaseModel):
     voteId: str
     total: int
     items: list[ResultItemOut]
+    tieredItems: list[TieredResultItemOut] | None = None

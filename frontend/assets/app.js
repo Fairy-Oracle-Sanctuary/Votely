@@ -133,6 +133,24 @@
       confirm: "Confirm",
       cancel: "Cancel",
       confirmLogout: "Are you sure you want to logout?",
+
+      // Tiered mode
+      voteMode: "Vote Mode",
+      modeNormal: "Normal",
+      modeTiered: "Main/Secondary/Normal",
+      tierConfigLabel: "Tier Quotas",
+      tierConfigHint: "Order: Main / Secondary / Normal",
+      tierMain: "Main",
+      tierSecondary: "Secondary",
+      tierNormal: "Normal",
+      navRules: "Rules",
+      navVote: "Vote",
+      navResults: "Results",
+      totalRanking: "Total Ranking",
+      mainRanking: "Main Ranking",
+      searchRole: "Search role...",
+      votesUnit: "votes",
+      defaultRules: "Select roles from the list on the left. They will be automatically assigned to Main, Secondary, or Normal slots based on priority. You can remove any selection by clicking it again. At least 1 role is required to submit.",
     },
     zh: {
       create: "创建",
@@ -235,6 +253,24 @@
       confirm: "确认",
       cancel: "取消",
       confirmLogout: "确定要退出登录吗？",
+
+      // Tiered mode
+      voteMode: "投票模式",
+      modeNormal: "普通模式",
+      modeTiered: "本命/次本命/普通票",
+      tierConfigLabel: "分组数量",
+      tierConfigHint: "顺序：本命 / 次本命 / 普通票",
+      tierMain: "本命",
+      tierSecondary: "次本命",
+      tierNormal: "普通票",
+      navRules: "规则介绍",
+      navVote: "投票入口",
+      navResults: "结果公示",
+      totalRanking: "总人气榜",
+      mainRanking: "本命人气榜",
+      searchRole: "搜索角色...",
+      votesUnit: "票",
+      defaultRules: "从左侧列表选择角色，系统会按优先级自动分配到本命、次本命或普通票。点击已选角色可取消。至少选择1个角色即可提交。",
     },
   };
 
@@ -458,6 +494,11 @@
     // Update footer
     const footer = document.querySelector(".app-footer p");
     if (footer) footer.innerHTML = t("footerText");
+    // Update create button
+    const createSpan = document.querySelector("#btn-create span");
+    if (createSpan) createSpan.textContent = t("create");
+    // Update admin header
+    updateHeaderAdmin();
   }
 
   // ── Backend API ────────────────────────────────────────────
@@ -495,6 +536,376 @@
       adminState.role = data.role;
       updateHeaderAdmin();
       toast(t("loginSuccess", { name: data.name }), "success");
+    }
+  }
+
+  function renderTieredDetail(root, vote) {
+    const isEnded = vote.status === "ended";
+    const isPending = vote.status === "pending";
+    const isActive = vote.status === "active";
+
+    const cfg = vote.tierConfig || { main: 1, secondary: 2, normal: 4 };
+    const limits = {
+      main: Math.max(0, parseInt(cfg.main || 0)),
+      secondary: Math.max(0, parseInt(cfg.secondary || 0)),
+      normal: Math.max(0, parseInt(cfg.normal || 0)),
+    };
+
+    const selectedSet = new Set();
+    const main = [];
+    const secondary = [];
+    const normal = [];
+    let currentTab = "vote"; // default tab
+
+    function tierOf(id) {
+      if (main.includes(id)) return "main";
+      if (secondary.includes(id)) return "secondary";
+      if (normal.includes(id)) return "normal";
+      return "";
+    }
+
+    function removeId(id) {
+      const t0 = tierOf(id);
+      if (!t0) return;
+      const arr = t0 === "main" ? main : t0 === "secondary" ? secondary : normal;
+      const idx = arr.indexOf(id);
+      if (idx >= 0) arr.splice(idx, 1);
+      selectedSet.delete(id);
+    }
+
+    function nextTier() {
+      if (main.length < limits.main) return "main";
+      if (secondary.length < limits.secondary) return "secondary";
+      if (normal.length < limits.normal) return "normal";
+      return "";
+    }
+
+    function addId(id) {
+      const t0 = nextTier();
+      if (!t0) return;
+      if (selectedSet.has(id)) return;
+      selectedSet.add(id);
+      if (t0 === "main") main.push(id);
+      else if (t0 === "secondary") secondary.push(id);
+      else normal.push(id);
+    }
+
+    function choicesInOrder() {
+      return [...main, ...secondary, ...normal];
+    }
+
+    function optionText(id) {
+      const o = vote.options.find((x) => x.id === id);
+      return o ? o.text : id;
+    }
+
+    // ── Sub-page renderers ────────────────────────────────────
+
+    function renderRulesPage() {
+      const rulesContent = vote.rulesText
+        ? `<div class="rules-custom-text">${esc(vote.rulesText).replace(/\n/g, "<br>")}</div>`
+        : `<div class="rules-card"><ul>
+            <li>${t("tierMain")}: ${limits.main} &nbsp; ${t("tierSecondary")}: ${limits.secondary} &nbsp; ${t("tierNormal")}: ${limits.normal}</li>
+            <li>${t("defaultRules")}</li>
+          </ul></div>`;
+      return `
+        <h2 class="tier-page-title">${t("navRules")}</h2>
+        <div class="tier-page-body">${rulesContent}</div>
+      `;
+    }
+
+    function renderVotePage() {
+      return `
+        <h2 class="tier-page-title">${t("navVote")}</h2>
+        <div class="tier-page-body">
+          <div class="tiered-vote-layout">
+            <div class="tiered-vote-roles">
+              <div class="search-bar" style="margin-bottom:12px">
+                ${ICONS.search}
+                <input type="text" id="tier-search" placeholder="${t("searchRole")}" />
+              </div>
+              <div class="options-list" id="tier-options"></div>
+            </div>
+            <div class="tiered-vote-buckets">
+              <div class="tier-box">
+                <div class="tier-title">${t("tierMain")} (${limits.main})</div>
+                <div class="tier-items" id="tier-main"></div>
+              </div>
+              <div class="tier-box">
+                <div class="tier-title">${t("tierSecondary")} (${limits.secondary})</div>
+                <div class="tier-items" id="tier-secondary"></div>
+              </div>
+              <div class="tier-box">
+                <div class="tier-title">${t("tierNormal")} (${limits.normal})</div>
+                <div class="tier-items" id="tier-normal"></div>
+              </div>
+              <div class="vote-action" style="margin-top:16px">
+                ${
+                  isEnded
+                    ? `<span class="badge badge-ended">${t("ended")}</span>`
+                    : isPending
+                    ? `<button class="btn btn-outline" disabled>${t("notStartedYet")}</button>`
+                    : `<button class="btn btn-primary" id="btn-submit" disabled>${t("submitVote")}</button>`
+                }
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderResultsPage() {
+      return `
+        <h2 class="tier-page-title">${t("navResults")}</h2>
+        <div class="tier-page-body">
+          <div class="tier-results-loading" id="tier-results-loading">
+            <div class="spinner"></div><p>${t("loading")}</p>
+          </div>
+          <div class="tier-results-content" id="tier-results-content" style="display:none"></div>
+        </div>
+      `;
+    }
+
+    // ── Main layout ────────────────────────────────────────────
+
+    root.innerHTML = `
+      <div class="detail-header">
+        <a href="#/" class="detail-back">${ICONS.arrowLeft}${t("backToList")}</a>
+        <div class="detail-title-row">
+          <h1 class="detail-title">${esc(vote.title)}</h1>
+          <button class="btn btn-ghost btn-sm btn-detail-share" title="${t("shareLink")}">${ICONS.copy}</button>
+        </div>
+        <div class="detail-meta">
+          ${statusBadge(vote.status)}
+          <span class="meta-item">${ICONS.clock}${formatDateTime(vote.startTime)} - ${formatDateTime(vote.endTime)}</span>
+          <span class="meta-item">${ICONS.users}${totalVotes(vote)} ${t("votes")}</span>
+        </div>
+      </div>
+
+      <div class="tiered-container">
+        <nav class="tiered-nav" id="tiered-nav">
+          <button class="tiered-nav-item active" data-tab="rules">${t("navRules")}</button>
+          <button class="tiered-nav-item" data-tab="vote">${t("navVote")}</button>
+          <button class="tiered-nav-item" data-tab="results">${t("navResults")}</button>
+        </nav>
+        <div class="tiered-content" id="tiered-content"></div>
+      </div>
+    `;
+
+    // Share
+    const shareBtn = root.querySelector(".btn-detail-share");
+    if (shareBtn) {
+      shareBtn.addEventListener("click", () => {
+        const url = `${location.origin}${location.pathname}#/vote/${vote.id}`;
+        navigator.clipboard.writeText(url).then(() => toast(t("linkCopied"), "success"));
+      });
+    }
+
+    // ── Tab switching ──────────────────────────────────────────
+    const contentEl = root.querySelector("#tiered-content");
+    const navEl = root.querySelector("#tiered-nav");
+
+    function switchTab(tab) {
+      currentTab = tab;
+      navEl.querySelectorAll(".tiered-nav-item").forEach((b) => {
+        b.classList.toggle("active", b.dataset.tab === tab);
+      });
+      if (tab === "rules") {
+        contentEl.innerHTML = renderRulesPage();
+      } else if (tab === "vote") {
+        contentEl.innerHTML = renderVotePage();
+        bindVotePage();
+      } else if (tab === "results") {
+        contentEl.innerHTML = renderResultsPage();
+        loadResultsPage();
+      }
+    }
+
+    navEl.querySelectorAll(".tiered-nav-item").forEach((btn) => {
+      btn.addEventListener("click", () => switchTab(btn.dataset.tab));
+    });
+
+    // Default tab
+    switchTab(currentTab);
+
+    // ── Vote page bindings ─────────────────────────────────────
+    function bindVotePage() {
+      const optionsEl = root.querySelector("#tier-options");
+      const searchEl = root.querySelector("#tier-search");
+      const mainEl = root.querySelector("#tier-main");
+      const secEl = root.querySelector("#tier-secondary");
+      const norEl = root.querySelector("#tier-normal");
+
+      function renderBuckets() {
+        function pill(id) {
+          return `<button class="tier-pill" data-oid="${esc(id)}" type="button">${esc(optionText(id))}${ICONS.x}</button>`;
+        }
+        mainEl.innerHTML = main.map(pill).join("") || `<div class="tier-empty">-</div>`;
+        secEl.innerHTML = secondary.map(pill).join("") || `<div class="tier-empty">-</div>`;
+        norEl.innerHTML = normal.map(pill).join("") || `<div class="tier-empty">-</div>`;
+
+        root.querySelectorAll(".tier-pill").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            if (!isActive) return;
+            removeId(btn.dataset.oid);
+            renderAll();
+          });
+        });
+      }
+
+      function renderOptions() {
+        const q = (searchEl.value || "").trim().toLowerCase();
+        const rows = vote.options
+          .filter((o) => !q || (o.text || "").toLowerCase().includes(q))
+          .map((o) => {
+            const selected = selectedSet.has(o.id);
+            return `
+              <div class="option-item ${selected ? "disabled" : ""}" data-oid="${esc(o.id)}">
+                <div class="option-radio"><div class="option-radio-inner"></div></div>
+                <span class="option-label">${esc(o.text)}</span>
+              </div>
+            `;
+          })
+          .join("");
+        optionsEl.innerHTML = rows;
+
+        optionsEl.querySelectorAll(".option-item").forEach((item) => {
+          item.addEventListener("click", () => {
+            if (!isActive) return;
+            const oid = item.dataset.oid;
+            if (selectedSet.has(oid)) {
+              removeId(oid);
+              renderAll();
+              return;
+            }
+            addId(oid);
+            renderAll();
+          });
+        });
+      }
+
+      function updateSubmit() {
+        const btn = root.querySelector("#btn-submit");
+        if (!btn) return;
+        btn.disabled = choicesInOrder().length === 0;
+      }
+
+      function renderAll() {
+        renderBuckets();
+        renderOptions();
+        updateSubmit();
+      }
+
+      searchEl.addEventListener("input", renderOptions);
+      renderAll();
+
+      // Submit
+      const submitBtn = root.querySelector("#btn-submit");
+      if (submitBtn) {
+        submitBtn.addEventListener("click", async () => {
+          submitBtn.disabled = true;
+          try {
+            const fp = await generateFingerprint();
+            const powData = await apiFetch("/api/pow/challenge");
+            const nonce = await solvePow(powData.challenge, powData.difficulty);
+            if (nonce < 0) {
+              toast(t("errPowFailed"), "error");
+              submitBtn.disabled = false;
+              return;
+            }
+            await apiFetch(`/api/votes/${encodeURIComponent(vote.id)}/submit`, {
+              method: "POST",
+              body: JSON.stringify({
+                choices: choicesInOrder(),
+                fingerprint: fp,
+                powChallenge: powData.challenge,
+                powNonce: nonce,
+              }),
+            });
+            toast(t("voteSubmitted"), "success");
+            switchTab("results");
+          } catch (e) {
+            toast(e.message, "error");
+          } finally {
+            submitBtn.disabled = false;
+          }
+        });
+      }
+    }
+
+    // ── Results page ───────────────────────────────────────────
+    async function loadResultsPage() {
+      const loadingEl = root.querySelector("#tier-results-loading");
+      const contentEl = root.querySelector("#tier-results-content");
+      try {
+        const data = await apiFetch(`/api/votes/${encodeURIComponent(vote.id)}/results`);
+        if (loadingEl) loadingEl.style.display = "none";
+        if (!contentEl) return;
+
+        const tiered = data.tieredItems || [];
+        const total = data.total || 0;
+
+        // Sort by totalVotes desc for total ranking
+        const totalSorted = [...tiered].sort((a, b) => b.totalVotes - a.totalVotes);
+        // Sort by mainVotes desc for main ranking
+        const mainSorted = [...tiered].sort((a, b) => b.mainVotes - a.mainVotes);
+
+        function rankingList(items, voteKey) {
+          return items.map((item, i) => `
+            <div class="ranking-row">
+              <span class="ranking-rank">${i + 1}</span>
+              <span class="ranking-name">${esc(item.text)}</span>
+              <span class="ranking-dots"></span>
+              <span class="ranking-votes">${voteKey === "main" ? item.mainVotes : item.totalVotes} ${t("votesUnit")}</span>
+            </div>
+          `).join("");
+        }
+
+        contentEl.innerHTML = `
+          <div class="ranking-section">
+            <div class="ranking-header">
+              <h3>${t("totalRanking")}</h3>
+              <div class="search-bar" style="margin-bottom:8px;max-width:240px">
+                ${ICONS.search}
+                <input type="text" id="search-total" placeholder="${t("searchRole")}" />
+              </div>
+            </div>
+            <div class="ranking-list" id="ranking-total">${rankingList(totalSorted, "total")}</div>
+          </div>
+          <div class="ranking-section">
+            <div class="ranking-header">
+              <h3>${t("mainRanking")}</h3>
+              <div class="search-bar" style="margin-bottom:8px;max-width:240px">
+                ${ICONS.search}
+                <input type="text" id="search-main" placeholder="${t("searchRole")}" />
+              </div>
+            </div>
+            <div class="ranking-list" id="ranking-main">${rankingList(mainSorted, "main")}</div>
+          </div>
+        `;
+        contentEl.style.display = "block";
+
+        // Search filtering
+        function bindRankingSearch(inputId, listId, items, voteKey) {
+          const input = root.querySelector(`#${inputId}`);
+          const listEl = root.querySelector(`#${listId}`);
+          if (!input || !listEl) return;
+          input.addEventListener("input", () => {
+            const q = input.value.trim().toLowerCase();
+            const filtered = q ? items.filter((it) => (it.text || "").toLowerCase().includes(q)) : items;
+            listEl.innerHTML = rankingList(filtered, voteKey);
+          });
+        }
+        bindRankingSearch("search-total", "ranking-total", totalSorted, "total");
+        bindRankingSearch("search-main", "ranking-main", mainSorted, "main");
+
+      } catch (e) {
+        if (loadingEl) loadingEl.style.display = "none";
+        if (contentEl) {
+          contentEl.innerHTML = `<div class="empty-state">${ICONS.inbox}<p>${esc(e.message)}</p></div>`;
+          contentEl.style.display = "block";
+        }
+      }
     }
   }
 
@@ -731,6 +1142,9 @@
       status: v.status,
       startTime: v.startAt,
       endTime: v.endAt,
+      mode: v.mode || "normal",
+      tierConfig: v.tierConfig || null,
+      rulesText: v.rulesText || "",
       maxChoices: v.maxChoices,
       totalVotes: v.totalVotes,
     };
@@ -744,6 +1158,9 @@
       status: v.status,
       startTime: v.startAt,
       endTime: v.endAt,
+      mode: v.mode || "normal",
+      tierConfig: v.tierConfig || null,
+      rulesText: v.rulesText || "",
       maxChoices: v.maxChoices,
       resultVisibility: v.resultVisibility,
       options: v.options,
@@ -941,6 +1358,10 @@
   }
 
   function renderDetail(root, vote) {
+    if (vote.mode === "tiered") {
+      renderTieredDetail(root, vote);
+      return;
+    }
     const isEnded = vote.status === "ended";
     const isPending = vote.status === "pending";
     const isActive = vote.status === "active";
@@ -1195,6 +1616,9 @@
   // ── Admin Panel ────────────────────────────────────────────
   async function renderAdmin(root) {
     if (!adminState.loggedIn) {
+      await checkAdminLogin();
+    }
+    if (!adminState.loggedIn) {
       showLoginModal();
       location.hash = "#/";
       return;
@@ -1258,7 +1682,15 @@
             });
             toast(t("voteEnded"), "success");
             route();
-          } catch (e) { toast(e.message, "error"); }
+          } catch (e) {
+            if (e && (e.status === 401 || e.status === 403)) {
+              adminState.loggedIn = false;
+              updateHeaderAdmin();
+              showLoginModal();
+              return;
+            }
+            toast(e.message, "error");
+          }
         });
       });
       listEl.querySelectorAll(".btn-delete").forEach((btn) => {
@@ -1269,7 +1701,15 @@
             await apiFetch(`/api/admin/votes/${encodeURIComponent(vid)}`, { method: "DELETE" });
             toast(t("voteDeleted"), "success");
             route();
-          } catch (e) { toast(e.message, "error"); }
+          } catch (e) {
+            if (e && (e.status === 401 || e.status === 403)) {
+              adminState.loggedIn = false;
+              updateHeaderAdmin();
+              showLoginModal();
+              return;
+            }
+            toast(e.message, "error");
+          }
         });
       });
     } catch (e) {
@@ -1301,10 +1741,14 @@
             <label>${t("description")}</label>
             <textarea class="form-input" id="edit-desc">${esc(vote.description)}</textarea>
           </div>
-          <div class="form-group">
+          <div class="form-group" ${vote.mode === "tiered" ? 'style="display:none"' : ""}>
             <label>${t("maxChoicesPerVoter")}</label>
             <input class="form-input" type="number" id="edit-max" value="${vote.maxChoices}" min="1" max="50" />
           </div>
+          ${vote.mode === "tiered" ? `<div class="form-group">
+            <label>${t("navRules")}</label>
+            <textarea class="form-input" id="edit-rules-text" rows="4" style="resize:vertical">${esc(vote.rulesText || "")}</textarea>
+          </div>` : ""}
           <div class="form-group">
             <label>${t("options")}</label>
             <div id="edit-option-inputs">
@@ -1375,7 +1819,13 @@
       try {
         await apiFetch(`/api/admin/votes/${encodeURIComponent(voteId)}`, {
           method: "PUT",
-          body: JSON.stringify({ title, description: desc, maxChoices, options }),
+          body: JSON.stringify({
+            title,
+            description: desc,
+            maxChoices,
+            options,
+            ...(vote.mode === "tiered" ? { rulesText: (overlay.querySelector("#edit-rules-text") || {}).value || "" } : {}),
+          }),
         });
         close();
         toast(t("voteUpdated") || "Updated", "success");
@@ -1468,9 +1918,36 @@
             <input class="form-input" type="text" id="create-end" readonly placeholder="YYYY-MM-DD HH:mm" />
             <input type="hidden" id="create-end-iso" />
           </div>
-          <div class="form-group">
+          <div class="form-group" id="create-max-wrap">
             <label>${t("maxChoicesPerVoter")}</label>
             <input class="form-input" type="number" id="create-max" value="1" min="1" />
+          </div>
+          <div class="form-group">
+            <label>${t("voteMode")}</label>
+            <div class="select" id="create-mode">
+              <input type="hidden" id="create-mode-value" value="normal" />
+              <button type="button" class="select-trigger" aria-haspopup="listbox" aria-expanded="false">
+                <span class="select-trigger-text">${t("modeNormal")}</span>
+              </button>
+              <div class="select-menu" role="listbox">
+                <button type="button" class="select-option" role="option" data-value="normal">${t("modeNormal")}</button>
+                <button type="button" class="select-option" role="option" data-value="tiered">${t("modeTiered")}</button>
+              </div>
+            </div>
+          </div>
+          <div class="form-group" id="tier-config-wrap" style="display:none">
+            <label>${t("tierConfigLabel")}</label>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+              <input class="form-input" type="number" id="tier-main" value="1" min="0" />
+              <input class="form-input" type="number" id="tier-secondary" value="2" min="0" />
+              <input class="form-input" type="number" id="tier-normal" value="4" min="0" />
+            </div>
+            <div style="margin-top:6px;color:var(--text-muted);font-size:0.85rem">${t("tierConfigHint")}</div>
+          </div>
+          <div class="form-group" id="rules-text-wrap" style="display:none">
+            <label>${t("navRules")}</label>
+            <textarea class="form-input" id="create-rules-text" rows="4" placeholder="${t('defaultRules')}" style="resize:vertical"></textarea>
+            <div style="margin-top:4px;color:var(--text-muted);font-size:0.8rem">${t("tierConfigHint")}</div>
           </div>
           <div class="form-group">
             <label>${t("resultVisibility")}</label>
@@ -1532,6 +2009,33 @@
     const visTrigger = overlay.querySelector("#create-result-vis .select-trigger");
     const visText = overlay.querySelector("#create-result-vis .select-trigger-text");
     const visValue = overlay.querySelector("#create-result-vis-value");
+
+    // Custom select (mode)
+    const modeWrap = overlay.querySelector("#create-mode");
+    const modeTrigger = overlay.querySelector("#create-mode .select-trigger");
+    const modeText = overlay.querySelector("#create-mode .select-trigger-text");
+    const modeValue = overlay.querySelector("#create-mode-value");
+    const tierWrap = overlay.querySelector("#tier-config-wrap");
+    const rulesWrap = overlay.querySelector("#rules-text-wrap");
+    const maxWrap = overlay.querySelector("#create-max-wrap");
+
+    if (modeWrap && modeTrigger && modeText && modeValue) {
+      const menu = modeWrap.querySelector(".select-menu");
+      modeTrigger.addEventListener("click", () => {
+        modeWrap.classList.toggle("open");
+      });
+      menu.querySelectorAll(".select-option").forEach((opt) => {
+        opt.addEventListener("click", () => {
+          const v = opt.dataset.value;
+          modeValue.value = v;
+          modeText.textContent = v === "tiered" ? t("modeTiered") : t("modeNormal");
+          modeWrap.classList.remove("open");
+          if (tierWrap) tierWrap.style.display = v === "tiered" ? "block" : "none";
+          if (rulesWrap) rulesWrap.style.display = v === "tiered" ? "block" : "none";
+          if (maxWrap) maxWrap.style.display = v === "normal" ? "block" : "none";
+        });
+      });
+    }
 
     function closeVisMenu() {
       if (!visWrap) return;
@@ -1650,11 +2154,27 @@
 
       (async () => {
         try {
+          const mode = (overlay.querySelector("#create-mode-value") || {}).value || "normal";
+          let tierConfig = null;
+          if (mode === "tiered") {
+            const m = parseInt((overlay.querySelector("#tier-main") || {}).value || "1");
+            const s = parseInt((overlay.querySelector("#tier-secondary") || {}).value || "2");
+            const n = parseInt((overlay.querySelector("#tier-normal") || {}).value || "4");
+            tierConfig = {
+              main: isNaN(m) ? 1 : m,
+              secondary: isNaN(s) ? 2 : s,
+              normal: isNaN(n) ? 4 : n,
+            };
+          }
+
           const payload = {
             title,
             description: desc,
             startAt: start,
             endAt: end,
+            mode,
+            tierConfig,
+            rulesText: (overlay.querySelector("#create-rules-text") || {}).value || "",
             maxChoices,
             resultVisibility,
             options: opts,

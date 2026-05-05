@@ -1095,3 +1095,249 @@ input[type="datetime-local"].form-input:focus::-webkit-calendar-picker-indicator
 .detail-title-row .btn-ghost {
   flex-shrink: 0;
 }
+
+/* === Tiered Voting === */
+.tiered-container {
+  display: grid;
+  grid-template-columns: 180px 1fr;
+  gap: 0;
+  margin-top: 20px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  min-height: 500px;
+}
+
+.tiered-nav {
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border);
+  padding: 16px 0;
+  position: sticky;
+  top: 0;
+  align-self: start;
+  height: 100%;
+}
+
+.tiered-nav-item {
+  display: block;
+  width: 100%;
+  padding: 12px 20px;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s;
+  border-left: 3px solid transparent;
+}
+
+.tiered-nav-item:hover {
+  color: var(--text);
+  background: var(--bg-primary);
+}
+
+.tiered-nav-item.active {
+  color: var(--accent);
+  font-weight: 600;
+  border-left-color: var(--accent);
+  background: var(--bg-primary);
+}
+
+.tiered-content {
+  padding: 24px 28px;
+  overflow-y: auto;
+}
+
+.tier-page-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin-bottom: 16px;
+  color: var(--text);
+}
+
+.tier-page-body {
+  line-height: 1.6;
+}
+
+.rules-custom-text {
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  padding: 16px;
+  font-size: 0.9rem;
+  color: var(--text);
+  white-space: pre-wrap;
+}
+
+/* Vote sub-page layout */
+.tiered-vote-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.tiered-vote-roles {
+  min-width: 0;
+}
+
+.tiered-vote-buckets {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.tiered-vote-buckets .tier-box {
+  margin-bottom: 0;
+}
+
+.tiered-vote-buckets .vote-action {
+  grid-column: 1 / -1;
+}
+
+.tier-box {
+  border: 1px solid var(--border);
+  background: var(--bg-primary);
+  border-radius: 12px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.tier-title {
+  font-weight: 600;
+  margin-bottom: 10px;
+  color: var(--text);
+}
+
+.tier-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 36px;
+}
+
+.tier-empty {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  padding: 6px 0;
+}
+
+.tier-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: 0.875rem;
+}
+
+.tier-pill svg {
+  width: 14px;
+  height: 14px;
+}
+
+.option-item.disabled {
+  opacity: 0.45;
+}
+
+/* === Rankings === */
+.ranking-section {
+  margin-bottom: 28px;
+}
+
+.ranking-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.ranking-header h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.ranking-list {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.ranking-row {
+  display: flex;
+  align-items: center;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.9rem;
+}
+
+.ranking-row:last-child {
+  border-bottom: none;
+}
+
+.ranking-rank {
+  width: 32px;
+  font-weight: 700;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.ranking-name {
+  flex-shrink: 0;
+  max-width: 50%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ranking-dots {
+  flex: 1;
+  border-bottom: 1px dotted var(--border);
+  margin: 0 10px;
+  min-width: 20px;
+}
+
+.ranking-votes {
+  flex-shrink: 0;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.tier-results-loading {
+  text-align: center;
+  padding: 40px 0;
+  color: var(--text-muted);
+}
+
+@media (max-width: 900px) {
+  .tiered-container {
+    grid-template-columns: 1fr;
+  }
+  .tiered-nav {
+    display: flex;
+    position: static;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    padding: 0;
+  }
+  .tiered-nav-item {
+    flex: 1;
+    text-align: center;
+    border-left: none;
+    border-bottom: 3px solid transparent;
+    padding: 12px 8px;
+  }
+  .tiered-nav-item.active {
+    border-left-color: transparent;
+    border-bottom-color: var(--accent);
+  }
+  .tiered-vote-buckets {
+    grid-template-columns: 1fr;
+  }
+}
