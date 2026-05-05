@@ -71,6 +71,35 @@ def parse_tier_config_json(raw: str) -> dict[str, int]:
     return normalize_tier_config(None)
 
 
+def normalize_tier_weights(cfg: dict[str, int] | None) -> dict[str, int]:
+    base = {"main": 4, "secondary": 2, "normal": 1}
+    if not cfg:
+        return base
+    out: dict[str, int] = {}
+    for k in ("main", "secondary", "normal"):
+        v = cfg.get(k, base[k])
+        try:
+            iv = int(v)
+        except Exception:
+            iv = base[k]
+        out[k] = max(0, iv)
+    return out
+
+
+def parse_tier_weights_json(raw: str) -> dict[str, int]:
+    if not raw:
+        return normalize_tier_weights(None)
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return normalize_tier_weights(None)
+    if isinstance(data, dict):
+        return normalize_tier_weights(
+            {k: data.get(k) for k in ("main", "secondary", "normal")}
+        )
+    return normalize_tier_weights(None)
+
+
 try:
     from .admins_config import ADMINS_CONFIG
 except ImportError:
@@ -166,6 +195,15 @@ def create_app() -> FastAPI:
         except Exception:
             conn.execute(
                 text("ALTER TABLE votes ADD COLUMN rules_text TEXT NOT NULL DEFAULT ''")
+            )
+            conn.commit()
+        try:
+            conn.execute(text("SELECT tier_weights_json FROM votes LIMIT 1"))
+        except Exception:
+            conn.execute(
+                text(
+                    "ALTER TABLE votes ADD COLUMN tier_weights_json TEXT NOT NULL DEFAULT ''"
+                )
             )
             conn.commit()
 
@@ -378,6 +416,9 @@ def create_app() -> FastAPI:
                     tierConfig=parse_tier_config_json(v.tier_config_json)
                     if v.mode == "tiered"
                     else None,
+                    tierWeights=parse_tier_weights_json(v.tier_weights_json)
+                    if v.mode == "tiered"
+                    else None,
                     maxChoices=v.max_choices,
                     rulesText=v.rules_text,
                     resultVisibility=v.result_visibility,
@@ -408,6 +449,9 @@ def create_app() -> FastAPI:
             endAt=v.end_at,
             mode=v.mode,
             tierConfig=parse_tier_config_json(v.tier_config_json)
+            if v.mode == "tiered"
+            else None,
+            tierWeights=parse_tier_weights_json(v.tier_weights_json)
             if v.mode == "tiered"
             else None,
             maxChoices=v.max_choices,
@@ -597,12 +641,14 @@ def create_app() -> FastAPI:
 
         tiered_items = None
         if is_tiered:
+            tw = parse_tier_weights_json(v.tier_weights_json)
             tiered_items = []
             for o in v.options:
                 mv = main_counts.get(o.id, 0)
                 sv = sec_counts.get(o.id, 0)
                 nv = nor_counts.get(o.id, 0)
                 tv = mv + sv + nv
+                score = mv * tw["main"] + sv * tw["secondary"] + nv * tw["normal"]
                 tiered_items.append(
                     {
                         "optionId": o.id,
@@ -611,6 +657,7 @@ def create_app() -> FastAPI:
                         "secondaryVotes": sv,
                         "normalVotes": nv,
                         "totalVotes": tv,
+                        "weightedScore": float(score),
                         "percent": (tv / total * 100.0) if total > 0 else 0.0,
                     }
                 )
@@ -650,6 +697,9 @@ def create_app() -> FastAPI:
                     tierConfig=parse_tier_config_json(v.tier_config_json)
                     if v.mode == "tiered"
                     else None,
+                    tierWeights=parse_tier_weights_json(v.tier_weights_json)
+                    if v.mode == "tiered"
+                    else None,
                     maxChoices=v.max_choices,
                     rulesText=v.rules_text,
                     resultVisibility=v.result_visibility,
@@ -671,6 +721,7 @@ def create_app() -> FastAPI:
 
         mode = body.mode
         tier_cfg = normalize_tier_config(body.tierConfig) if mode == "tiered" else None
+        tier_w = normalize_tier_weights(body.tierWeights) if mode == "tiered" else None
         if mode == "tiered":
             max_choices = tier_cfg["main"] + tier_cfg["secondary"] + tier_cfg["normal"]
         else:
@@ -686,6 +737,9 @@ def create_app() -> FastAPI:
             end_at=body.endAt,
             mode=mode,
             tier_config_json=json.dumps(tier_cfg, ensure_ascii=False)
+            if mode == "tiered"
+            else "",
+            tier_weights_json=json.dumps(tier_w, ensure_ascii=False)
             if mode == "tiered"
             else "",
             max_choices=max_choices,
@@ -731,6 +785,9 @@ def create_app() -> FastAPI:
             tierConfig=parse_tier_config_json(v.tier_config_json)
             if v.mode == "tiered"
             else None,
+            tierWeights=parse_tier_weights_json(v.tier_weights_json)
+            if v.mode == "tiered"
+            else None,
             maxChoices=v.max_choices,
             rulesText=v.rules_text,
             resultVisibility=v.result_visibility,
@@ -762,6 +819,10 @@ def create_app() -> FastAPI:
         if body.tierConfig is not None and v.mode == "tiered":
             tier_cfg = normalize_tier_config(body.tierConfig)
             v.tier_config_json = json.dumps(tier_cfg, ensure_ascii=False)
+
+        if body.tierWeights is not None and v.mode == "tiered":
+            tw = normalize_tier_weights(body.tierWeights)
+            v.tier_weights_json = json.dumps(tw, ensure_ascii=False)
 
         if body.title is not None:
             v.title = sanitize(body.title)
@@ -809,6 +870,9 @@ def create_app() -> FastAPI:
             endAt=v.end_at,
             mode=v.mode,
             tierConfig=parse_tier_config_json(v.tier_config_json)
+            if v.mode == "tiered"
+            else None,
+            tierWeights=parse_tier_weights_json(v.tier_weights_json)
             if v.mode == "tiered"
             else None,
             maxChoices=v.max_choices,

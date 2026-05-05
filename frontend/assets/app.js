@@ -143,6 +143,9 @@
       tierMain: "Main",
       tierSecondary: "Secondary",
       tierNormal: "Normal",
+      tierWeightsLabel: "Score Weights",
+      tierWeightsHint: "Default: Main=4, Secondary=2, Normal=1",
+      weightedScore: "Score",
       navRules: "Rules",
       navVote: "Vote",
       navResults: "Results",
@@ -263,6 +266,9 @@
       tierMain: "本命",
       tierSecondary: "次本命",
       tierNormal: "普通票",
+      tierWeightsLabel: "分数权重",
+      tierWeightsHint: "默认：本命=4，次本命=2，普通=1",
+      weightedScore: "分数",
       navRules: "规则介绍",
       navVote: "投票入口",
       navResults: "结果公示",
@@ -845,8 +851,8 @@
         const tiered = data.tieredItems || [];
         const total = data.total || 0;
 
-        // Sort by totalVotes desc for total ranking
-        const totalSorted = [...tiered].sort((a, b) => b.totalVotes - a.totalVotes);
+        // Sort by weightedScore desc for total ranking
+        const totalSorted = [...tiered].sort((a, b) => (b.weightedScore || 0) - (a.weightedScore || 0));
         // Sort by mainVotes desc for main ranking
         const mainSorted = [...tiered].sort((a, b) => b.mainVotes - a.mainVotes);
 
@@ -856,7 +862,7 @@
               <span class="ranking-rank">${i + 1}</span>
               <span class="ranking-name">${esc(item.text)}</span>
               <span class="ranking-dots"></span>
-              <span class="ranking-votes">${voteKey === "main" ? item.mainVotes : item.totalVotes} ${t("votesUnit")}</span>
+              <span class="ranking-votes">${voteKey === "main" ? item.mainVotes : (item.weightedScore != null ? item.weightedScore : item.totalVotes)} ${voteKey === "main" ? t("votesUnit") : t("weightedScore")}</span>
             </div>
           `).join("");
         }
@@ -1144,6 +1150,7 @@
       endTime: v.endAt,
       mode: v.mode || "normal",
       tierConfig: v.tierConfig || null,
+      tierWeights: v.tierWeights || null,
       rulesText: v.rulesText || "",
       maxChoices: v.maxChoices,
       totalVotes: v.totalVotes,
@@ -1160,6 +1167,7 @@
       endTime: v.endAt,
       mode: v.mode || "normal",
       tierConfig: v.tierConfig || null,
+      tierWeights: v.tierWeights || null,
       rulesText: v.rulesText || "",
       maxChoices: v.maxChoices,
       resultVisibility: v.resultVisibility,
@@ -1746,6 +1754,15 @@
             <input class="form-input" type="number" id="edit-max" value="${vote.maxChoices}" min="1" max="50" />
           </div>
           ${vote.mode === "tiered" ? `<div class="form-group">
+            <label>${t("tierWeightsLabel")}</label>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+              <input class="form-input" type="number" id="edit-weight-main" value="${(vote.tierWeights && vote.tierWeights.main != null) ? vote.tierWeights.main : 4}" min="0" />
+              <input class="form-input" type="number" id="edit-weight-secondary" value="${(vote.tierWeights && vote.tierWeights.secondary != null) ? vote.tierWeights.secondary : 2}" min="0" />
+              <input class="form-input" type="number" id="edit-weight-normal" value="${(vote.tierWeights && vote.tierWeights.normal != null) ? vote.tierWeights.normal : 1}" min="0" />
+            </div>
+            <div style="margin-top:6px;color:var(--text-muted);font-size:0.85rem">${t("tierWeightsHint")}</div>
+          </div>` : ""}
+          ${vote.mode === "tiered" ? `<div class="form-group">
             <label>${t("navRules")}</label>
             <textarea class="form-input" id="edit-rules-text" rows="4" style="resize:vertical">${esc(vote.rulesText || "")}</textarea>
           </div>` : ""}
@@ -1824,7 +1841,16 @@
             description: desc,
             maxChoices,
             options,
-            ...(vote.mode === "tiered" ? { rulesText: (overlay.querySelector("#edit-rules-text") || {}).value || "" } : {}),
+            ...(vote.mode === "tiered"
+              ? {
+                  rulesText: (overlay.querySelector("#edit-rules-text") || {}).value || "",
+                  tierWeights: {
+                    main: parseInt((overlay.querySelector("#edit-weight-main") || {}).value || "4") || 0,
+                    secondary: parseInt((overlay.querySelector("#edit-weight-secondary") || {}).value || "2") || 0,
+                    normal: parseInt((overlay.querySelector("#edit-weight-normal") || {}).value || "1") || 0,
+                  },
+                }
+              : {}),
           }),
         });
         close();
@@ -1944,6 +1970,15 @@
             </div>
             <div style="margin-top:6px;color:var(--text-muted);font-size:0.85rem">${t("tierConfigHint")}</div>
           </div>
+          <div class="form-group" id="tier-weights-wrap" style="display:none">
+            <label>${t("tierWeightsLabel")}</label>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+              <input class="form-input" type="number" id="weight-main" value="4" min="0" />
+              <input class="form-input" type="number" id="weight-secondary" value="2" min="0" />
+              <input class="form-input" type="number" id="weight-normal" value="1" min="0" />
+            </div>
+            <div style="margin-top:6px;color:var(--text-muted);font-size:0.85rem">${t("tierWeightsHint")}</div>
+          </div>
           <div class="form-group" id="rules-text-wrap" style="display:none">
             <label>${t("navRules")}</label>
             <textarea class="form-input" id="create-rules-text" rows="4" placeholder="${t('defaultRules')}" style="resize:vertical"></textarea>
@@ -2016,6 +2051,7 @@
     const modeText = overlay.querySelector("#create-mode .select-trigger-text");
     const modeValue = overlay.querySelector("#create-mode-value");
     const tierWrap = overlay.querySelector("#tier-config-wrap");
+    const weightsWrap = overlay.querySelector("#tier-weights-wrap");
     const rulesWrap = overlay.querySelector("#rules-text-wrap");
     const maxWrap = overlay.querySelector("#create-max-wrap");
 
@@ -2031,6 +2067,7 @@
           modeText.textContent = v === "tiered" ? t("modeTiered") : t("modeNormal");
           modeWrap.classList.remove("open");
           if (tierWrap) tierWrap.style.display = v === "tiered" ? "block" : "none";
+          if (weightsWrap) weightsWrap.style.display = v === "tiered" ? "block" : "none";
           if (rulesWrap) rulesWrap.style.display = v === "tiered" ? "block" : "none";
           if (maxWrap) maxWrap.style.display = v === "normal" ? "block" : "none";
         });
@@ -2156,6 +2193,7 @@
         try {
           const mode = (overlay.querySelector("#create-mode-value") || {}).value || "normal";
           let tierConfig = null;
+          let tierWeights = null;
           if (mode === "tiered") {
             const m = parseInt((overlay.querySelector("#tier-main") || {}).value || "1");
             const s = parseInt((overlay.querySelector("#tier-secondary") || {}).value || "2");
@@ -2164,6 +2202,14 @@
               main: isNaN(m) ? 1 : m,
               secondary: isNaN(s) ? 2 : s,
               normal: isNaN(n) ? 4 : n,
+            };
+            const wm = parseInt((overlay.querySelector("#weight-main") || {}).value || "4");
+            const ws = parseInt((overlay.querySelector("#weight-secondary") || {}).value || "2");
+            const wn = parseInt((overlay.querySelector("#weight-normal") || {}).value || "1");
+            tierWeights = {
+              main: isNaN(wm) ? 4 : wm,
+              secondary: isNaN(ws) ? 2 : ws,
+              normal: isNaN(wn) ? 1 : wn,
             };
           }
 
@@ -2174,6 +2220,7 @@
             endAt: end,
             mode,
             tierConfig,
+            tierWeights,
             rulesText: (overlay.querySelector("#create-rules-text") || {}).value || "",
             maxChoices,
             resultVisibility,

@@ -33,6 +33,8 @@ class Vote(Base):
 
     # Custom rules text for tiered mode (empty = use default)
     rules_text: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # JSON string: {"main": 4, "secondary": 2, "normal": 1}
+    tier_weights_json: Mapped[str] = mapped_column(Text, nullable=False, default="")
 
     # after_vote: can view results after submitting; after_end: only after vote ends
     result_visibility: Mapped[str] = mapped_column(

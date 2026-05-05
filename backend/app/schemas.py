@@ -24,6 +24,7 @@ class VoteOut(BaseModel):
     endAt: datetime
     mode: VoteMode = "normal"
     tierConfig: dict[str, int] | None = None
+    tierWeights: dict[str, int] | None = None
     rulesText: str = ""
     maxChoices: int
     resultVisibility: ResultVisibility
@@ -44,6 +45,7 @@ class VoteCreateIn(BaseModel):
     endAt: datetime
     mode: VoteMode = Field(default="normal")
     tierConfig: dict[str, int] | None = None
+    tierWeights: dict[str, int] | None = None
     rulesText: str = Field(default="")
     maxChoices: int = Field(default=1, ge=1, le=50)
     resultVisibility: ResultVisibility = Field(default="after_vote")
@@ -57,6 +59,7 @@ class VoteUpdateIn(BaseModel):
     endAt: datetime | None = None
     mode: VoteMode | None = None
     tierConfig: dict[str, int] | None = None
+    tierWeights: dict[str, int] | None = None
     rulesText: str | None = None
     maxChoices: int | None = Field(default=None, ge=1, le=50)
     resultVisibility: ResultVisibility | None = None
@@ -92,6 +95,7 @@ class TieredResultItemOut(BaseModel):
     secondaryVotes: int = 0
     normalVotes: int = 0
     totalVotes: int = 0
+    weightedScore: float = 0.0
     percent: float = 0.0
 
 
